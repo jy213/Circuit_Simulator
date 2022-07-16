@@ -1,0 +1,486 @@
+void classify_node_b_m_d (std::vector<bjt*> & b_two , std::vector<bjt*> & b_one, std::vector<mosfet*> &m_two, std::vector<mosfet*> &m_one, std::vector<Diode*> & d_two, std::vector<Diode*> & d_one,
+ std::vector <bjt*> b, std::vector <mosfet*> m, std::vector<Diode*> d){
+     for(int t = 0; t < b.size(); t ++){
+         if(b[t]->get_polarity()[1] == 0 || b[t]->get_polarity()[2] == 0){
+             b_one.push_back(b[t]);
+         }
+         else{
+             b_two.push_back(b[t]);
+         }
+     }
+     for(int y = 0; y < m.size(); y ++){
+         if(m[y]->get_polarity()[0] == 0 || m[y]->get_polarity()[1] == 0){
+             m_one.push_back(m[y]);
+         }
+         else{
+             m_two.push_back(m[y]);
+         }
+     }
+     for(int u = 0; u < d.size(); u ++){
+         if(d[u]->get_node()[0] == 0){
+             d_one.push_back(d[u]);
+         }
+         else{
+             d_two.push_back(d[u]);
+         }
+     }
+ }
+
+
+// for the bjt part
+        for(int l = 0; l < b_one.size(); l++){
+            // connecting to ground bjt
+        if((row == num_before + b_one[l]->get_polarity()[1] )|| (row == num_before + b_one[l]->get_polarity()[2] -1 && b_one[l]->get_polarity()[1] == 0)) {
+            mat(row, row - num_before) = 1;
+            decide = true;
+        }
+        }
+        if( num_de <= row && row < (num_de + b_two.size())){
+                            // need to construct bjt 0.7
+                    mat(row, b_two[row - num_de]->get_polarity()[1] -1) = 1;
+                    mat(row, b_two[row - num_de]->get_polarity()[2] -1) = -1;
+                    decide = true;
+        }
+
+        // for Diode
+        for(int y = 0; y < d_one.size(); y++){
+            if(row == num_before + d_one[y]->get_node()[1] -1){
+                mat(row , row - num_before) = 1;
+                decide = true;
+            }
+        }
+
+        if(num_de + b_two.size() <= row < num_before - m_two.size()){
+            mat(row, d_two[row - num_de - b_two.size()]->get_polarity()[0] -1) = 1;
+            mat(row, d_two[row - num_de - b_two.size()]->get_polarity()[1] -1) = -1;
+        }
+
+        // for mosfet
+
+        for(int x = 0; x<m_one.size(); x++){
+            
+        }
+
+
+problem:
+Eigen::MatrixXd build_guess_volt (std::vector<general*> input, int maxnode){
+    std::vector<Resistor*> r;
+    std::vector<bjt*> b;
+    std::vector<mosfet*> m;
+    std::vector<Diode*>d; 
+    std::vector<voltsrc*>v;
+    classify_comp(input, r, b, m, d, v);
+    int num_de = 0;
+    std::vector<int> g_volt;
+// this vector is used to store the nodes of voltsrc connecting to ground.
+    std::vector<int> n_volt;
+// this vector contains the index for the voltsrc connecting to two nodes.
+    dc_volt(v, num_de, n_volt, g_volt);
+    int num = num_de + maxnode;
+    Eigen::MatrixXd mat(num, num);
+    for(int row = 0; row < num; row++){
+        for(int c=0; c<num; c++){
+            mat(row, c) = 0;
+            }
+        std::cout << mat << std::endl;
+        // construct model row full 0;
+
+        if(row < num_de ){
+            // connect to two nodes
+            // considering mos, bjt, diode with mos vgs = vt bjt vbe = 0.7, diode 0.7 
+            mat(row, input[n_volt[row]]->get_polarity()[0]-1) = 1;
+            mat(row, input[n_volt[row]]->get_polarity()[1]-1) = -1;
+        }
+        
+        else{
+            // for voltage connecting to ground
+            for(int k = 0; k < g_volt.size(); k++){
+            if(row == num_de + g_volt[k]-1){
+                //connect to ground, put row
+                mat(row, g_volt[k]-1) = 1;
+            }
+        }
+            for (int t = 0; t < num_de ; t++){
+                if(row == input[n_volt[t]]->get_polarity()[0] + num_de - 1){
+                    mat(row, t + maxnode) = -1;
+                }
+                if(row == input[n_volt[t]]->get_polarity()[1] + num_de - 1){
+                    mat(row, t + maxnode) = 1;
+               }
+            }
+        }
+        
+    }
+
+    for(int index = 0; index < num; index++){
+        for(int seq_comp = 0; seq_comp < input.size() ; seq_comp ++){
+                //translate the current output to the conductance at the two control node to the connect node.  
+            if(input[seq_comp]->get_type() == "G") { 
+                mat(input[seq_comp]->get_polarity()[0], input[seq_comp]->get_polarity()[2]) -= input[seq_comp]-> conductance(0).real();
+                mat(input[seq_comp]->get_polarity()[0], input[seq_comp]->get_polarity()[3]) += input[seq_comp]-> conductance(0).real();
+                mat(input[seq_comp]->get_polarity()[1], input[seq_comp]->get_polarity()[2]) += input[seq_comp]-> conductance(0).real();
+                mat(input[seq_comp]->get_polarity()[1], input[seq_comp]->get_polarity()[3]) -= input[seq_comp]-> conductance(0).real();
+            }   
+        }
+    }
+    for (int q = 0; q < r.size(); q++){ 
+         //  two nodes
+        std::cout << "work";
+            if(r[q]->get_node()[0] != 0){
+                mat(r[q]->get_polarity()[0]-1 + num_de, r[q]->get_polarity()[0]-1) += r[q]->conductance(0).real();
+                mat(r[q]->get_polarity()[1]-1 + num_de, r[q]->get_polarity()[1]-1) += r[q]->conductance(0).real(); 
+                mat(r[q]->get_polarity()[0] -1 + num_de, r[q]->get_polarity()[1] -1) -= r[q]->conductance(0).real();
+                mat(r[q]->get_polarity()[1] -1 + num_de, r[q]->get_polarity()[0] -1) -= r[q]->conductance(0).real();
+            }
+            else{
+                mat(r[q]->get_node()[1]-1 + num_de, r[q]->get_node()[1]-1) += r[q]->conductance(0).real();
+            }
+    }
+    return mat;
+}
+
+
+        // for resistor
+        /*
+        for (int i = 0; i < r.size(); i++){ 
+            if(r[i]->get_node()[0] != 0){
+                mat(r[i]->get_polarity()[0]-1 + num_de, r[i]->get_polarity()[1]-1) += -r[i]->real_cond();
+                mat(r[i]->get_polarity()[1]-1 + num_de, r[i]->get_polarity()[0]-1) += -r[i]->real_cond();
+                mat(r[i]->get_polarity()[0]-1 + num_de, r[i]->get_polarity()[0]-1) += r[i]->real_cond();
+                mat(r[i]->get_polarity()[1]-1 + num_de, r[i]->get_polarity()[1]-1) += r[i]->real_cond(); 
+            }
+            if(r[i]->get_node()[0] == 0){
+                mat(r[i]->get_node()[1] -1 + num_de, r[i]->get_node()[1]-1) += r[i]->real_cond();
+            }
+        }
+        */
+
+            /*for(int row = 0; row < num; row++){
+        std::complex<double> tot_cond (0,0);
+        for(int c=0; c<num; c++){
+            mat(row, c) = 0;
+            }
+        // construct model row full 0;
+        for(int k = 0; k < g_volt.size(); k++){
+        if(row == num_de + g_volt[k]-1){
+            //connect to ground, put row
+            mat(g_volt[k]-1 + num_de, g_volt[k]-1 +num_de) = 1;
+        }
+        }
+        if(row < num_de ){
+            // connect to two nodes
+            int posi = input[n_volt[row]]->get_polarity()[0];
+            int nega = input[n_volt[row]]->get_polarity()[1];
+            mat(row, posi-1) = 1;
+            mat(row, nega-1) = -1;          
+            }
+        
+        }
+        */
+            // consider resistor
+    for(int y = 0; y < r.size(); y++){
+        col_b(r[y]->get_polarity()[0] + num_de -1 , 0) += (guess_volt[r[y]->get_polarity()[0]] - guess_volt[r[y]->get_polarity()[1]]) * r[y]->conductance(0).real();
+        col_b(r[y]->get_polarity()[1] + num_de -1 , 0) += (guess_volt[r[y]->get_polarity()[1]] - guess_volt[r[y]->get_polarity()[0]]) * r[y]->conductance(0).real();
+    }
+    return col_b;
+}
+
+
+        if(input[i]->get_type() == "R"){
+            col_b(input[i]->get_polarity()[0] -1 + num_de , 0) += (guess_volt[input[i]->get_polarity()[0] -1 + num_de] - guess_volt[input[i]->get_polarity()[1] -1 + num_de]) * input[i]->conductance (0).real();
+            col_b(input[i]->get_polarity()[0] -1 + num_de , 0) += (guess_volt[input[i]->get_polarity()[1] -1 + num_de] - guess_volt[input[i]->get_polarity()[0] -1 + num_de]) * input[i]->conductance (0).real();
+        }
+
+
+Eigen::MatrixXd build_fvm_matrix(std::vector<general*> input, int maxnode, std::vector <double> guess_volt){
+// to build fvm for each node. It should contains the linear and non-linear terms , the sum of it should be equal to zero for the function. 
+    std::vector<Resistor*> r;
+    std::vector<bjt*> b;
+    std::vector<mosfet*> m;
+    std::vector<Diode*>d; 
+    std::vector<voltsrc*>v;
+    classify_comp(input, r, b, m, d, v);
+// how to deal with the voltage source connecting to the two floating nodes
+        int num_de = 0;
+    std::vector<int> g_volt;
+// this vector is used to store the nodes of voltsrc connecting to ground.
+    std::vector<int> n_volt;
+// this vector contains the index for the voltsrc connecting to two nodes.
+    dc_volt(v, num_de, n_volt, g_volt);
+    int num = num_de + maxnode;
+    Eigen::MatrixXd col_b (num, 1);
+    for(int r = 0; r < num; r++){
+        col_b (r, 0) = 0;
+    }
+
+    for(int r_n_volt = 0; r_n_volt < n_volt.size(); r_n_volt++){
+        // want vposi - vnega -vsrc = 0
+        col_b (r_n_volt, 0) = guess_volt[ input[n_volt[r_n_volt]]->get_polarity()[0]] - guess_volt[input[n_volt[r_n_volt]]->get_polarity()[1]] + input[n_volt[r_n_volt]]->get_volt().real();
+    }
+    
+    for(int i = 0; i < input.size(); i++){
+        if(input[i]->get_type() == "I"){
+            // to decide whether the current source is connected to the two nodes or one node connecting to the ground.
+            if(input[i]->get_node()[0] == 0){
+                if(input[i]->get_polarity()[0] != 0){
+                    col_b (input[i]->get_polarity()[0] + num_de - 1, 0) -= input[i]->get_current().real();
+                }
+                else{
+                    col_b (input[i]->get_polarity()[1] + num_de - 1, 0) += input[i]->get_current().real();
+                }
+        }
+        else{
+            col_b (input[i]->get_polarity()[0] + num_de -1, 0) -= input[i]->get_current().real();
+            col_b (input[i]->get_polarity()[1] + num_de -1, 0) += input[i]->get_current().real();
+        }
+        }
+        
+        if((input[i]->get_type() == "V") && (input[i]->get_node()[0] == 0)){
+            if(input[i]->get_polarity()[0] != 0){
+                col_b (input[i]->get_node()[1] + num_de - 1, 0) = input[i]->get_volt().real();
+            }
+            if(input[i]->get_polarity()[1] != 0){
+            col_b (input[i]->get_node()[1] + num_de - 1, 0) = - input[i]->get_volt().real();
+            }
+        }
+
+    }
+     std::cout << col_b;
+    
+    
+    // consider diode
+    for(int g = 0; g < d.size(); g++){
+        col_b (d[g]->get_polarity()[0] + num_de - 1, 0) += d[g]->id(guess_volt[d[g]->get_polarity()[0] + num_de - 1], guess_volt[d[g]->get_polarity()[1] + num_de - 1 ]);
+        col_b (d[g]->get_polarity()[1] + num_de - 1 ,0) -= d[g]->id(guess_volt[d[g]->get_polarity()[0] + num_de - 1], guess_volt[d[g]->get_polarity()[1] + num_de - 1 ]);
+    }
+
+    
+    // consider resistor
+    for(int y = 0; y < r.size(); y++){
+        col_b(r[y]->get_polarity()[0] + num_de -1 , 0) += (guess_volt[r[y]->get_polarity()[0]] - guess_volt[r[y]->get_polarity()[1]]) * r[y]->conductance(0).real();
+        col_b(r[y]->get_polarity()[1] + num_de -1 , 0) += (guess_volt[r[y]->get_polarity()[1]] - guess_volt[r[y]->get_polarity()[0]]) * r[y]->conductance(0).real();
+    }
+         std::cout << col_b << std::endl; 
+    // consider bjt
+    for(int h = 0; h < b.size(); h++){
+        // node C
+        b[h]->initialize_bjt(guess_volt[b[h]->get_polarity()[1]], guess_volt[b[h]->get_polarity()[2]], guess_volt[b[h]->get_polarity()[0]]);
+        col_b(b[h]->get_polarity()[0] + num_de -1 , 0) += b[h]->ic();
+        // node B
+        col_b(b[h]->get_polarity()[1] + num_de -1 , 0) += b[h]->ib();
+        // node E
+        col_b(b[h]->get_polarity()[2] + num_de -1 , 0) += b[h]->ie();
+    } 
+
+    // consider mosfet
+    for(int u =0; u < m.size(); u ++){
+        m[u]->initialize_mos(guess_volt[m[u]->get_polarity()[0]], guess_volt[m[u]->get_polarity()[1]], guess_volt[m[u]->get_polarity()[2]]);
+        // node D
+        col_b(m[u]->get_polarity()[2], 0) += m[u]->id();
+        // node S   
+        col_b(m[u]->get_polarity()[1], 0) -= m[u]->id();
+    
+    }
+    return col_b;
+}
+ for(int i = 0; i < b.size(); i ++){
+            // make assumption vbe = 0.7, vce =1;
+            b[i]->initialize_bjt(0.7 , 0, 0.75);
+            //for node C
+            col_b(b[i]->get_polarity()[0]+ num_de -1,0) -= b[i]->ic();
+            // for node B
+            col_b(b[i]->get_polarity()[1] + num_de -1,0) -= b[i]->ib();
+            // for node E
+            col_b(b[i]->get_polarity()[2] + num_de -1,0) += b[i]->ie();
+    }
+            // for mosfet
+        for(int i = 0; i < m.size(); i++){
+            //make assumption vgs = vt, vds = 0;
+            m[i]->initialize_mos(m[i]->vt(), 0, 0);
+            //for node D 
+            col_b(m[i]->get_polarity()[2] + num_de -1, 0) -= m[i]->id();
+            //for node S
+            col_b(m[i]->get_polarity()[1] + num_de -1, 0) += m[i]->id();
+        }
+
+        for(int n = 0; n < d.size(); n++){
+            col_b(d[n]->get_polarity()[0] + num_de -1, 0) -= d[n]->id(0.7, 0);
+            col_b(d[n]->get_polarity()[1] + num_de -1, 0) += d[n]->id(0.7, 0);
+        }
+
+
+        if(input[seq_comp]->get_type() == "Q"){
+
+                    bjt* tmp_bjt = dynamic_cast<bjt*> (input[seq_comp]);
+                    tmp_bjt->initialize_bjt(0.7, 0, 1);
+                    // be
+                    if((tmp_bjt->get_polarity()[1] == row && tmp_bjt->get_polarity()[2] == index)||(tmp_bjt->get_polarity()[2] == row && tmp_bjt->get_polarity()[1] == index)){
+                        cond -= (tmp_bjt->ib() / 0.7);
+                    }
+                    if((tmp_bjt->get_polarity()[1] == 0 && tmp_bjt->get_polarity()[2] == row)||(tmp_bjt->get_polarity()[2] == 0 && tmp_bjt->get_polarity()[1] == row)){
+                        ground_cond += (tmp_bjt->ib() / 0.7);
+                    }
+                    //ce
+                    if((tmp_bjt->get_polarity()[0] == row && tmp_bjt->get_polarity()[2] == index)||(tmp_bjt->get_polarity()[2] == row && tmp_bjt->get_polarity()[0] == index)){
+                        cond -= (tmp_bjt->ic() / 1);
+                    }
+                    if((tmp_bjt->get_polarity()[0] == 0 && tmp_bjt->get_polarity()[2] == row)||(tmp_bjt->get_polarity()[2] == 0 && tmp_bjt->get_polarity()[0] == row)){
+                        ground_cond += (tmp_bjt->ic() / 1);
+                    }
+                }
+                
+                if(input[seq_comp]->get_type() == "D"){
+                    Diode* tmpd = dynamic_cast<Diode*>(input[seq_comp]);
+                    if(tmpd ->get_node() == tmp){
+                        cond -= (tmpd->id(0.7,0) / 0.7);
+                    }
+                    if(tmpd->get_node() == tmp2){
+                        ground_cond += (tmpd->id(0.7,0) / 0.7);
+                    }
+                }
+                if(input[seq_comp]->get_type() == "M"){
+                    mosfet * tmpm = dynamic_cast<mosfet*> (input[seq_comp]);
+                    tmpm->initialize_mos(tmpm->vt() , 0, 0);
+                    if((tmpm->get_polarity()[1] == row && tmpm->get_polarity()[2] == index)||(tmpm->get_polarity()[2] == row && tmpm->get_polarity()[1] == index)){
+                        cond -= (tmpm->id() / tmpm->vt());
+                    }
+                    if((tmpm->get_polarity()[1] == 0 && tmpm->get_polarity()[2] == row)||(tmpm->get_polarity()[2] == 0 && tmpm->get_polarity()[1] == row)){
+                        ground_cond += (tmpm->id() / tmpm->vt());
+                    }
+                    delete tmpm;
+                }
+
+                    // the end of the row loop;
+    // to build the right col with 1 , -1.
+        }
+/*
+    // for diode
+    for( int h = 0; h < d.size() ; h++){
+        if(d[h]->get_node()[0] != 0){
+        mat(d[h]->get_polarity()[0] +num_de -1 , d[h]->get_polarity()[1] -1) -= d[h]->g(standard_volt[d[h]->get_polarity()[0]], standard_volt[d[h]->get_polarity()[1]]);
+        mat(d[h]->get_polarity()[1] +num_de -1 , d[h]->get_polarity()[0] -1) -= d[h]->g(standard_volt[d[h]->get_polarity()[0]], standard_volt[d[h]->get_polarity()[1]]);
+        mat(d[h]->get_polarity()[0] +num_de -1 , d[h]->get_polarity()[0] -1) += d[h]->g(standard_volt[d[h]->get_polarity()[0]], standard_volt[d[h]->get_polarity()[1]]);
+        mat(d[h]->get_polarity()[1] +num_de -1 , d[h]->get_polarity()[1] -1) += d[h]->g(standard_volt[d[h]->get_polarity()[0]], standard_volt[d[h]->get_polarity()[1]]);
+        }
+        else{
+            if(d[h]->get_polarity()[0] == 0){
+            mat(d[h]->get_polarity()[1] +num_de -1 , d[h]->get_polarity()[1] -1) += d[h]->g(0, standard_volt[d[h]->get_polarity()[1]]);
+            }
+            else{
+            mat(d[h]->get_polarity()[0] +num_de -1 , d[h]->get_polarity()[0] -1) += d[h]->g(standard_volt[d[h]->get_polarity()[0]], 0);
+            }
+        }   
+    }
+
+    // for bjt
+    for( int t = 0; t < b.size() ; t++){
+        if(b[t]->get_polarity()[0] != 0 && b[t]->get_polarity()[1] != 0 && b[t]->get_polarity()[2] != 0){
+            //be
+            mat(b[t]->get_polarity()[1] + num_de -1 , b[t]->get_polarity()[2] -1) -= b[t]->gbe();
+            mat(b[t]->get_polarity()[2] + num_de -1 , b[t]->get_polarity()[1] -1) -= b[t]->gbe();
+            mat(b[t]->get_polarity()[1] + num_de -1 , b[t]->get_polarity()[1] -1) += b[t]->gbe();
+            mat(b[t]->get_polarity()[1] + num_de -1 , b[t]->get_polarity()[2] -1) += b[t]->gbe();
+            //ce
+            mat(b[t]->get_polarity()[0] + num_de -1 , b[t]->get_polarity()[2] -1) -= (b[t]->g0()+b[t]->gm());
+            mat(b[t]->get_polarity()[0] + num_de -1 , b[t]->get_polarity()[1] -1) -= b[t]->gm();
+            mat(b[t]->get_polarity()[2] + num_de -1 , b[t]->get_polarity()[0] -1) -= b[t]->g0();
+            mat(b[t]->get_polarity()[0] + num_de -1 , b[t]->get_polarity()[0] -1) += b[t]->g0();
+            mat(b[t]->get_polarity()[2] + num_de -1 , b[t]->get_polarity()[2] -1) += b[t]->g0();
+        }
+
+    }
+
+    // for mosfet
+    for( int u = 0; u < m.size() ; u++){
+
+    }
+*/
+    // the end of the matrix loop;
+
+void find_final_sol (std::vector<general*> in, int maxnode, std::vector<double> f, Eigen::MatrixXd dcvolt){
+    cout<< "please enter the name of text file as input: " <<endl;
+    string file;
+    cin >> file;
+    vector <string> s;
+    s = ReadInput(file);
+
+    std::vector<double> tmp;
+    for( int i = 0; i < dcvolt.rows(); i++){
+        tmp.push_back(dcvolt(i,0));
+    }
+
+    complex<double> inp;
+    vector <string> insrc;
+    vector<voltsrc*> vstore;
+    vector<currsrc*> istore;
+    for(int j=0; j<in.size(); j++){
+        if(in[j]->get_type() == "V"){
+            voltsrc* a = dynamic_cast<voltsrc*> (in[j]);
+            if(a->dc_ac() == "ac"){
+                inp = a->get_volt();
+                string aa = a->search_name();
+                insrc.push_back(aa);
+                vstore.push_back(a);
+            }
+        }
+        if(in[j]->get_type() == "I"){
+            currsrc* b = dynamic_cast<currsrc*> (in[j]);
+            if(b->dc_ac() == "ac"){
+                inp = b->get_current();
+                string bb = b->search_name();
+                insrc.push_back(bb);
+                istore.push_back(b);
+            }
+        }      
+    }
+    int ins = -1;
+    if(insrc.size() > 1){
+        cout<< "multiple sources detected, please choose one from the lists below as input: " <<endl;
+        for(int q=0; q<vstore.size(); q++){
+            cout<< q << ": " << vstore[q]->search_name() << endl;
+        }
+        for(int p=vstore.size(); p<vstore.size()+istore.size(); p++){
+            cout<< p << ": " << istore[p]->search_name() << endl;
+        }
+        std::cin >> ins; 
+        if(0  <= ins < vstore.size()){
+            // volt source
+            inp = vstore[ins]->get_volt();
+        }
+        if( vstore.size()<=ins) {
+            // current source
+            inp = istore[ins - vstore.size()]->get_current();
+        }
+    }
+
+    cout<< "please choose a node as output: (type a number) "<< endl;
+    cout<< "choose between 1 ~ " << maxnode << endl;
+    int node;
+    cin >> node;
+
+    std::vector<general*> input = reorganize(in , maxnode, tmp);
+    vector< complex <double> > outd;
+    for(int y = 0; y < f.size(); y++){
+        Eigen::MatrixXcd G = SSEM(input, maxnode, f[y], dcvolt);
+        Eigen::MatrixXcd colb = build_acb(input, maxnode);
+        Eigen::MatrixXcd result = G.colPivHouseholderQr().solve(colb);
+        //std::cout << "freqeucy" << f[y] << " ";
+        // for(int u = 0; u < result.rows(); u++){
+        //     std::cout << result(u , 0) << "," ;
+        // }
+        // std::cout << std::endl;
+        // 好像没有讨论只有一个ac source的时候该咋 不对 如果只有一个的话 我直接就把值给到inp了, 哪里啊
+        outd.push_back(result(node-1, 0) / inp);
+    }
+
+    ofstream outFile;
+    cout<< "please enter the name of the text file to store the output: " <<endl;
+    string ot;
+    cin >> ot;
+    outFile.open(ot);
+    for(int k=0;k<f.size();k++){
+      outFile << f[k] << "," << outd[k] << endl;  
+    }
+    outFile.close();
+    cout<< "completed!" <<endl;
+}
